@@ -13,7 +13,7 @@ HTML/JS (Fronted)
 
 ```bash
 git clone <repo-url>
-cd syano_url
+cd SyanoURL
 ```
 
 ### 2. Create and activate the virtual environment inside the backend folder.
