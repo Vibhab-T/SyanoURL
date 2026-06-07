@@ -41,6 +41,7 @@ class ShortURLSerializer(serializers.ModelSerializer):
     def validate_expires_at(self, value):
         if value is not None and value <= timezone.now():
             raise serializers.ValidationError("Expiry must be in the future")
+        return value
 
 class ShortURLDetailSerializer(ShortURLSerializer):
     #for the analytics view, includes the per click time stamp
