@@ -60,7 +60,7 @@ If you wish to use another port, you must change the PORT constants in /frontend
 
 ### 7. Open the frontend
 
-Open '/frontend/index.html' in your browser directly.
+Open '/frontend/index.html' in your browser directly i.e open the index.html in your browser as file:///path/to/SyanoURL/frontend/index.html
 
 ## API DOCUMENTATION
 
