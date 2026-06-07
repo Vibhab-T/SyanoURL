@@ -7,6 +7,12 @@ Built with:
 Django REST Framework (Backend)
 HTML/JS (Fronted)
 
+#### Important Note and disclaimer:
+
+    The Frontend is not reactive. Please refresh to update the click count and analytics.
+    CORS_ALLOW_ALL_ORIGINS = True in settings.py. This should be tightened in a real environment.
+    DEBUG = True, and SECRET_KEY is still hardcoded in settings.py. Proper environment variables should be used.
+
 ## Installation (Setup and running the project):
 
 ### 1. Clone the reposistory.
