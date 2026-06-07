@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <style>
+        table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+        th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; vertical-align: top; }
+        th { background: #f0f0f0; }
+        #error { color: red; }
+        #success { color: green; }
+        .clicks-list { font-size: 0.85em; margin: 0; padding-left: 16px; }
+        details { cursor: pointer; }
+        .expired-badge { color: #999; font-size: 0.8em; font-style: italic; }
+        .form-row { margin-bottom: 8px; }
+        .form-row label { display: inline-block; width: 140px; }
+        .hint { font-size: 0.8em; color: #666; margin-left: 4px; }
+
+    
+        .qr-container { margin-top: 6px; }
+        .qr-container img { display: block; width: 120px; height: 120px; }
+        .qr-container a { font-size: 0.8em; display: block; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <h2>Dashboard: <span id="username"></span></h2>
+    <button id="logout-btn">Log Out</button>
+
+    <h3>Shorten a URL: </h3>
+    <div id="error"></div>
+    <div id="success"></div>
+    <form id="shorten-form">
+        <div class="form-row">
+            <label>Long URL</label>
+            <input type="url" id="original-url" placeholder="https://example.com/very/long/url" size="50" required>
+        </div>
+        <div class="form-row">
+            <label>Custom code <span class="hint">(optional, a-z 0-9)</span></label>
+            <input type="text" id="custom-code" placeholder="e.g. mylink" size="20" pattern="[a-zA-Z0-9]+" title="Alphanumeric only">
+        </div>
+        <div class="form-row">
+            <label>Expires at <span class="hint"><br>(default: 10 days)</span></label>
+            <input type="datetime-local" id="expires-at">
+        </div>
+        <button type="submit">Shorten</button>
+    </form>
+
+    <h3>Your Links</h3>
+    <table id="links-table">
+        <thead>
+            <tr>
+                <th>Short URL</th>
+                <th>Original URL</th>
+                <th>Created</th>
+                <th>Expires</th>
+                <th>Clicks</th>
+                <th>Analytics</th>
+                <th>QR Code</th>
+                <th>Delete</th>
+            </tr>
+        </thead>
+        <tbody id="links-body">
+            <tr><td colspan="8">Loading...</td></tr>
+        </tbody>
+    </table>
+</body>
+<script>
+    const PORT = 8000;
+    const API = `http://localhost:${PORT}/api`;
+    const BASE_URL = `http://localhost:${PORT}`;
+
+    const defaultExpiry = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    document.getElementById("expires-at").value = defaultExpiry.toISOString().slice(0, 16);
+
+    //auths
+    function getAccessToken() { return localStorage.getItem("access"); }
+
+    async function authFetch(url, options = {}) {
+        options.headers = {
+            ...(options.headers || {}),
+            "Authorization": `Bearer ${getAccessToken()}`,
+            "Content-Type": "application/json",
+        };
+        let res = await fetch(url, options);
+        if (res.status === 401) {
+            const ok = await tryRefresh();
+            if (!ok) { logout(); return res; }
+            options.headers["Authorization"] = `Bearer ${getAccessToken()}`;
+            res = await fetch(url, options);
+        }
+        return res;
+    }
+
+    async function tryRefresh() {
+        const refresh = localStorage.getItem("refresh");
+        if (!refresh) return false;
+        try {
+            const res = await fetch(`${API}/auth/token/refresh/`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refresh }),
+            });
+            if (!res.ok) return false;
+            const data = await res.json();
+            localStorage.setItem("access", data.access);
+            if (data.refresh) localStorage.setItem("refresh", data.refresh);
+            return true;
+        } catch { return false; }
+    }
+
+    function logout() {
+        localStorage.removeItem("access");
+        localStorage.removeItem("refresh");
+        window.location.href = "login.html";
+    }
+
+    if (!getAccessToken()) window.location.href = "login.html";
+
+    (async () => {
+        const res = await authFetch(`${API}/auth/me/`);
+        if (!res.ok) return;
+        const user = await res.json();
+        document.getElementById("username").textContent = user.username;
+    })();
+
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+        const refresh = localStorage.getItem("refresh");
+        await authFetch(`${API}/auth/logout/`, {
+            method: "POST",
+            body: JSON.stringify({ refresh }),
+        }).catch(() => {});
+        logout();
+    });
+
+    // help!help!
+    function setMsg(type, msg) {
+        document.getElementById("error").textContent   = type === "error"   ? msg : "";
+        document.getElementById("success").textContent = type === "success" ? msg : "";
+    }
+
+    function shortLink(code) { return `${BASE_URL}/r/${code}/`; }
+    function formatDate(iso) { return new Date(iso).toLocaleString(); }
+    function escHtml(str) {
+        return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    // load user links
+    async function loadLinks() {
+        const res = await authFetch(`${API}/shorter/`);
+        if (!res.ok) {
+            document.getElementById("links-body").innerHTML = "<tr><td colspan='8'>Failed to load.</td></tr>";
+            return;
+        }
+        const urls = await res.json();
+        const tbody = document.getElementById("links-body");
+
+        if (urls.length === 0) {
+            tbody.innerHTML = "<tr><td colspan='8'>No links yet.</td></tr>";
+            return;
+        }
+
+        tbody.innerHTML = urls.map(u => {
+            const expired = u.is_expired;
+            const expiredBadge = expired ? ' <span class="expired-badge">(expired)</span>' : "";
+            const shortUrl = shortLink(u.short_code);
+            return `
+            <tr id="row-${u.id}">
+                <td><a href="${shortUrl}" target="_blank">${shortUrl}</a></td>
+                <td style="max-width:220px;word-break:break-all;">${escHtml(u.og_url)}</td>
+                <td>${formatDate(u.created_at)}</td>
+                <td>${formatDate(u.expires_at)}${expiredBadge}</td>
+                <td id="count-${u.id}">${u.click_count}</td>
+                <td>
+                    <details>
+                        <summary>Show</summary>
+                        <div id="analytics-${u.id}">Loading...</div>
+                    </details>
+                </td>
+                <td>
+                    <button onclick="loadQR(${u.id}, '${u.short_code}')">Generate QR</button>
+                    <div class="qr-container" id="qr-${u.id}"></div>
+                </td>
+                <td><button onclick="deleteLink(${u.id})">Delete</button></td>
+            </tr>`;
+        }).join("");
+
+        urls.forEach(u => {
+            const det = document.querySelector(`#row-${u.id} details`);
+            let loaded = false;
+            det.addEventListener("toggle", async () => {
+                if (det.open && !loaded) { loaded = true; await loadAnalytics(u.id); }
+            });
+        });
+    }
+
+    // analytics funcs
+    async function loadAnalytics(id) {
+        const el = document.getElementById(`analytics-${id}`);
+        const res = await authFetch(`${API}/shorter/${id}/`);
+        if (!res.ok) { el.textContent = "Failed to load analytics."; return; }
+        const data = await res.json();
+        document.getElementById(`count-${id}`).textContent = data.click_count;
+        if (data.clicks.length === 0) { el.textContent = "No clicks yet."; return; }
+        el.innerHTML = `
+            <strong>${data.click_count} click(s)</strong>
+            <ul class="clicks-list">
+                ${data.clicks.map(c => `<li>${formatDate(c.clicked_at)}</li>`).join("")}
+            </ul>`;
+    }
+
+    // qr funcs
+    async function loadQR(id, code) {
+        const container = document.getElementById(`qr-${id}`);
+        container.textContent = "Loading...";
+
+        // Fetch the PNG from the backend with auth header.
+        // can't use a plain <img src="..."> here because the endpoint requires auth,
+        // so fetch it manually, turn the binary response into a blob URL, then display it.
+        const res = await authFetch(`${API}/shorter/${id}/qr/`, {
+            // Remove the Content-Type: application/json header for this binary request
+            headers: { "Authorization": `Bearer ${getAccessToken()}` },
+        });
+
+        if (!res.ok) { container.textContent = "Failed to generate QR."; return; }
+
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+
+        container.innerHTML = `
+            <img src="${blobUrl}" alt="QR code for ${escHtml(code)}">
+            <a href="${blobUrl}" download="qr-${escHtml(code)}.png">Download PNG</a>
+        `;
+    }
+
+    // shortening form
+    document.getElementById("shorten-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        setMsg("", "");
+
+        const og_url      = document.getElementById("original-url").value.trim();
+        const custom_code = document.getElementById("custom-code").value.trim();
+        const expires_at  = document.getElementById("expires-at").value;
+
+        const body = { og_url };
+        if (custom_code) body.custom_code = custom_code;
+        if (expires_at)  body.expires_at  = new Date(expires_at).toISOString();
+
+        const res = await authFetch(`${API}/shorter/`, {
+            method: "POST",
+            body: JSON.stringify(body),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            const msgs = Object.entries(data)
+                .map(([f, errs]) => `${f}: ${[].concat(errs).join(" ")}`)
+                .join("\n");
+            setMsg("error", msgs);
+            return;
+        }
+
+        setMsg("success", `Created: ${shortLink(data.short_code)}`);
+        document.getElementById("original-url").value = "";
+        document.getElementById("custom-code").value  = "";
+        const nextDefault = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+        document.getElementById("expires-at").value = nextDefault.toISOString().slice(0, 16);
+        await loadLinks();
+    });
+
+    // delete
+    async function deleteLink(id) {
+        if (!confirm("Delete this link and all its analytics?")) return;
+        const res = await authFetch(`${API}/shorter/${id}/`, { method: "DELETE" });
+        if (res.ok || res.status === 204) { await loadLinks(); }
+        else { setMsg("error", "Failed to delete."); }
+    }
+
+    loadLinks();
+</script>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up</title>
+</head>
+<body>
+    <h2>Sign Up</h2>
+    <div id="error-box" style="color:red"></div>
+
+    <form id="signup-form">
+        <label>Username<br>
+            <input type="text" id="username" required />
+        </label>
+        
+        <br>
+        <br>
+ 
+        <label>Email<br>
+            <input type="email" id="email" />
+        </label>
+        
+        <br>
+        <br>
+ 
+        <label>Password<br>
+            <input type="password" id="password" required />
+        </label>
+        
+        <br>
+        <br>
+ 
+        <label>Confirm Password<br>
+            <input type="password" id="password2" required />
+        </label>
+        
+        <br>
+        <br>
+ 
+        <button type="submit">Create Account</button>
+    </form>
+
+    <p>Already have an account? <a href="login.html">Log in</a></p>
+</body>
+<script>
+    const PORT = 8000
+    const API = `http://localhost:${PORT}/api/auth`;
+
+    if (localStorage.getItem("access")){
+        window.location.href = "index.html";
+    }
+
+    document.getElementById("signup-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const errorBox = document.getElementById("error-box");
+        errorBox.textContent = "";
+
+        const body = {
+            username:  document.getElementById("username").value.trim(),
+            email:     document.getElementById("email").value.trim(),
+            password:  document.getElementById("password").value,
+            password2: document.getElementById("password2").value,
+        };
+
+        try {
+            const res = await fetch(`${API}/signup/`, {
+                method: "POST",
+                headers: {"Content-Type" : "application/json"},
+                body: JSON.stringify(body),
+            });
+
+            const data = await res.json();
+
+            if(!res.ok){
+                //ndeed to  flatten the drf validation errors
+                const messages = Object.entries(data).map(([field, errs]) => `${field}: ${[].concat(errs).join(" ")}`).join("\n");
+                errorBox.textContent = messages;
+                return;
+            }
+
+            localStorage.setItem("access", data.access);
+            localStorage.setItem("refresh", data.refresh);
+            window.location.href="index.html";
+        } catch (error) {
+            errorBox.textContent = "Error! Something wetn wrong";
+            
+        }
+    })
+
+
+</script>
+</html>
