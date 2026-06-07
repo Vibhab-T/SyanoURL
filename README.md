@@ -27,8 +27,8 @@ cd SyanoURL
 ```bash
 cd backend
 python -m venv .venv
-source venv/bin/activate #for mac and linux
-# venv\Scripts\activate #for windows
+source .venv/bin/activate #for mac and linux
+# .venv\Scripts\activate #for windows
 ```
 
 ### 3. Install dependencies for the backend.
